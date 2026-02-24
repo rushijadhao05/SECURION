@@ -9,84 +9,88 @@ context_engine.py
 # Role : Risk Engine
 
 import datetime
-import time
 
-# -------- GLOBAL ALERT CONTROL --------
-COOLDOWN_SECONDS = 30
-last_alert_time = 0
-
-
-def calculate_securion_risk(face_detected, zone, behavior):
-    global last_alert_time
-
-    now = datetime.datetime.now()
-    hour = now.hour
-    current_time = time.time()
-
-    # Night Logic (10 PM – 8 AM)
-    is_night = (hour >= 22 or hour < 8)
-
-    risk_score = 0
-    details = []
-
-    # ---------------- FACE LOGIC ----------------
+def calculate_securion_score(face_detected, zone, behavior):
+    """
+    Contextual Scoring: Face, Zone, and Behavior integration.
+    """
+    score = 0
     if face_detected:
-        risk_score += 50
-        details.append("Face Match: YES")
-
-        if is_night:
-            risk_score += 20
-            details.append(f"Night Access ({now.strftime('%H:%M')})")
-
+        score += 50  # Base match score
         if zone == "RESTRICTED":
-            risk_score += 30
-            details.append("Restricted Area Entry")
+            score += 30  # Location penalty
+        if behavior == "LOITERING":
+            score += 20  # Behavioral penalty
+    
+    return min(score, 100)
 
-    # ---------------- BEHAVIOR LOGIC ----------------
-    if behavior == "LOITERING":
-        risk_score += 20
-        details.append("Suspicious Loitering")
+def evaluate_risk_status(score):
+    """
+    Final Decision Engine based on Time-Windows and Risk Thresholds.
+    """
+    now = datetime.datetime.now()
+    current_hour = now.hour
+    current_time = now.strftime("%H:%M:%S")
 
-    elif behavior == "RUNNING":
-        risk_score += 30
-        details.append("High-Speed Movement")
-
-    # Cap score at 100
-    final_score = min(risk_score, 100)
-
-    # ---------------- DECISION ENGINE ----------------
-    if final_score >= 70:
-        # Cooldown check
-        if current_time - last_alert_time > COOLDOWN_SECONDS:
-            status = "⚠️ ALERT"
-            last_alert_time = current_time
-        else:
-            status = "⏳ COOLDOWN ACTIVE (Alert Suppressed)"
-
-    elif final_score >= 50:
-        status = "🔔 WARNING"
-
+    # 1. Score Classification (Standard 100/3 Scale)
+    if score <= 33.33:
+        score_level = "LOW"
+    elif score <= 66.66:
+        score_level = "MEDIUM"
     else:
-        status = "✅ NORMAL"
+        score_level = "HIGH"
+
+    # 2. Time-Window Classification
+    if 6 <= current_hour < 18:
+        time_level = "LOW (Day)"
+    elif 18 <= current_hour < 23:
+        time_level = "MEDIUM (Evening)"
+    else:
+        time_level = "HIGH (Late Night)"
+
+    # 3. Decision Logic
+    trigger_alarm = False
+    status = "SAFE"
+    reason = "Standard Activity"
+
+    # Condition A: Absolute High Risk
+    if score_level == "HIGH":
+        status = "CRITICAL"
+        trigger_alarm = True
+        reason = "Critical Risk Score (>66.66)"
+
+    # Condition B: High-Sensitivity Night Mode
+    elif time_level == "HIGH (Late Night)" and score > 15:
+        status = "CRITICAL"
+        trigger_alarm = True
+        reason = "Suspicious Night Movement (Score > 15)"
+
+    # Condition C: Evening Warning
+    elif time_level == "MEDIUM (Evening)" and score_level == "MEDIUM":
+        status = "WARNING"
+        trigger_alarm = True
+        reason = "Unusual Evening Activity"
 
     return {
-        "Time": now.strftime("%Y-%m-%d %H:%M:%S"),
-        "Score": f"{final_score}%",
-        "Status": status,
-        "Analysis": details
+        "Timestamp": current_time,
+        "Risk_Score": f"{score}%",
+        "Risk_Level": score_level,
+        "Time_Window": time_level,
+        "System_Status": status,
+        "Alarm": "🚨 ACTIVE" if trigger_alarm else "✅ STANDBY",
+        "Analysis": reason
     }
 
-
-# ---------------- TEST BLOCK ----------------
+# --- TEST EXECUTION ---
 if __name__ == "__main__":
+    # Example Scenario
+    current_score = calculate_securion_score(face_detected=True, zone="RESTRICTED", behavior="LOITERING")
+    report = evaluate_risk_status(current_score)
 
-    print("\n" + "=" * 45)
-    print("      SECURION SYSTEM LOG (DAY 16 PRO)     ")
-    print("=" * 45)
+    print("\n" + "="*40)
+    print("      SECURION AI MONITORING LOG      ")
+    print("="*40)
+    for key, value in report.items():
+        print(f"{key:15}: {value}")
+    print("="*40 + "\n")
 
-    result = calculate_securion_risk(True, "RESTRICTED", "LOITERING")
-
-    for key, value in result.items():
-        print(f"{key}: {value}")
-
-    print("=" * 45 + "\n")
