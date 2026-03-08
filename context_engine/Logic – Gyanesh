@@ -7,159 +7,118 @@ context_engine.py
 # SECURION - Context Logic Engine
 # Member-2 : Gyanesh
 # Role : Risk Engine
+ 
 
 import datetime
 import time
 import signal
 import sys
 
-
 class SecurionSystem:
-
-    def __init__(self,
-                 frame_threshold=3,
-                 cooldown_seconds=10):
-
+    def __init__(self, frame_threshold=3, cooldown_seconds=10):
         self.frame_threshold = frame_threshold
         self.cooldown_seconds = cooldown_seconds
-
         self.frame_counter = 0
         self.last_alert_time = 0
         self.running = True
-
+        self.log_history = []
         signal.signal(signal.SIGINT, self.shutdown)
 
-    # -----------------------------
-    # CLEAN SHUTDOWN
-    # -----------------------------
     def shutdown(self, signum, frame):
-        print("\n[INFO] SECURION shutting down safely...")
-        self.running = False
+        print("\nSECURION shutting down...")
+        print("Total logs:", len(self.log_history))
         sys.exit(0)
 
-    # -----------------------------
-    # SCORING ENGINE
-    # -----------------------------
     def calculate_score(self, face_detected, zone, behavior):
         score = 0
-
         if face_detected:
             score += 50
-
-            if zone == "RESTRICTED":
-                score += 30
-
-            if behavior == "LOITERING":
-                score += 20
-
+            if zone == "RESTRICTED": score += 30
+            if behavior == "LOITERING": score += 20
         return min(score, 100)
 
-    # -----------------------------
-    # DECISION ENGINE
-    # -----------------------------
     def evaluate(self, score):
         now = datetime.datetime.now()
         hour = now.hour
-        timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = now.strftime("%H:%M:%S")
 
-        if score <= 33:
-            score_level = "LOW"
-        elif score <= 66:
-            score_level = "MEDIUM"
-        else:
-            score_level = "HIGH"
+        if score <= 33: risk = "LOW"
+        elif score <= 70: risk = "MEDIUM"
+        else: risk = "HIGH"
 
-        if 6 <= hour < 18:
-            time_level = "DAY"
-        elif 18 <= hour < 23:
-            time_level = "EVENING"
-        else:
-            time_level = "LATE NIGHT"
+        if 6 <= hour < 18: window = "DAY"
+        elif 18 <= hour < 23: window = "EVENING"
+        else: window = "LATE NIGHT"
 
         trigger = False
         status = "SAFE"
-        reason = "Normal Activity"
+        reason = "Normal"
 
-        if score_level == "HIGH":
+        if risk == "HIGH":
             trigger = True
             status = "CRITICAL"
-            reason = "High Risk Score"
-
-        elif time_level == "LATE NIGHT" and score > 15:
+            reason = "High Risk Detected"
+        elif window == "LATE NIGHT" and score > 15:
             trigger = True
             status = "CRITICAL"
-            reason = "Suspicious Night Activity"
-
-        elif time_level == "EVENING" and score_level == "MEDIUM":
-            trigger = True
-            status = "WARNING"
-            reason = "Evening Irregular Activity"
+            reason = "Night Suspicion"
+        elif risk == "MEDIUM":
+            status = "LOG_ONLY"
+            reason = "Minor Activity Logged"
 
         return {
-            "timestamp": timestamp,
-            "score": score,
-            "score_level": score_level,
-            "time_window": time_level,
-            "trigger": trigger,
-            "status": status,
-            "reason": reason
+            "timestamp": timestamp, "score": score, "risk": risk,
+            "window": window, "trigger": trigger, "status": status, "reason": reason
         }
 
-    # -----------------------------
-    # MAIN FRAME PROCESSOR
-    # -----------------------------
     def process_frame(self, face_detected, zone, behavior):
-
         score = self.calculate_score(face_detected, zone, behavior)
-        evaluation = self.evaluate(score)
+        result = self.evaluate(score)
 
-        if evaluation["trigger"]:
+        # Frame counter logic (Day 22)
+        if result["trigger"] or result["status"] == "LOG_ONLY":
             self.frame_counter += 1
         else:
             self.frame_counter = 0
 
         cooldown_active = (time.time() - self.last_alert_time) < self.cooldown_seconds
-
         alarm = "STANDBY"
 
-        if self.frame_counter >= self.frame_threshold and not cooldown_active:
-            alarm = "ACTIVE"
-            self.last_alert_time = time.time()
-            self.frame_counter = 0
+        # FIXED LOGIC: Reset counter properly after reaching threshold
+        if self.frame_counter >= self.frame_threshold:
+            if result["trigger"]:
+                if not cooldown_active:
+                    alarm = "🚨 ALERT"
+                    self.last_alert_time = time.time()
+                    self.frame_counter = 0 # RESET AFTER ALERT
+                else:
+                    alarm = "⏳ COOLDOWN"
+                    self.frame_counter = 0 # RESET EVEN IN COOLDOWN TO RE-START COUNT
+            
+            elif result["status"] == "LOG_ONLY":
+                alarm = "📝 LOGGED"
+                self.log_history.append(result)
+                self.frame_counter = 0 # RESET AFTER LOGGING
 
-        evaluation["frame_count"] = self.frame_counter
-        evaluation["alarm"] = alarm
+        result["frames"] = self.frame_counter
+        result["alarm"] = alarm
+        return result
 
-        return evaluation
-
-    # -----------------------------
-    # REAL-TIME RUN LOOP
-    # -----------------------------
     def run(self):
-
         print("\n===============================")
-        print("  SECURION LIVE MONITORING ON  ")
-        print("===============================")
-        print("Press CTRL+C to stop\n")
-
+        print("  SECURION MASTER ENGINE LIVE  ")
+        print("===============================\n")
         while self.running:
-
-            # 🔴 REPLACE THIS PART WITH REAL CAMERA INPUT
-            face_detected = True
-            zone = "RESTRICTED"
-            behavior = "LOITERING"
-
-            result = self.process_frame(face_detected, zone, behavior)
-
-            print(result)
-
+            # Simulation Input
+            result = self.process_frame(face_detected=True, zone="RESTRICTED", behavior="LOITERING")
+            
+            print(f"[{result['timestamp']}] Score: {result['score']}% | Risk: {result['risk']}")
+            print(f"Frames: {result['frames']}/{self.frame_threshold} | Alarm: {result['alarm']}")
+            print(f"Reason: {result['reason']}")
+            print("-" * 32)
             time.sleep(1)
 
-
-# -----------------------------
-# SYSTEM START
-# -----------------------------
 if __name__ == "__main__":
     system = SecurionSystem(frame_threshold=3, cooldown_seconds=10)
     system.run()
-    
+
